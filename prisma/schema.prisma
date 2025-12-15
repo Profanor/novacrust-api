@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Wallet {
+  id        Int      @id @default(autoincrement())
+  balance   Int      @default(0)
+  currency  String   @default("USD")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+}
+
+model Transaction {
+  id        Int             @id @default(autoincrement())
+  walletId  Int
+  amount    Int
+  type      TransactionType
+  createdAt DateTime        @default(now())
+  wallet    Wallet          @relation(fields: [walletId], references: [id])
+}
+
+enum TransactionType {
+  FUND
+  TRANSFER
+  WITHDRAW
+  TRANSFER_IN
+  TRANSFER_OUT
+}

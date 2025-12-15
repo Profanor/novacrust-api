@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false,
+    "isolatedModules": true,
+    "paths": {
+			"@novacrust-lib/http": ["libs/http/src"],
+			"@novacrust-lib/http/*": ["libs/http/src/*"],
+			"@novacrust-lib/core": ["libs/core/src"],
+			"@novacrust-lib/core/*": ["libs/core/src/*"],
+			"@novacrust-lib/logger": ["libs/logger/src"],
+			"@novacrust-lib/logger/*": ["libs/logger/src/*"],
+			"@novacrust-lib/common": ["libs/common/src"],
+			"@novacrust-lib/common/*": ["libs/common/src/*"],
+			"@novacrust-lib/database": ["libs/database/src"],
+			"@novacrust-lib/database/*": ["libs/database/src/*"],
+			"@novacrust-lib/dto": ["libs/dto/src"],
+			"@novacrust-lib/dto/*": ["libs/dto/src/*"]
+		}
+  }
+}
