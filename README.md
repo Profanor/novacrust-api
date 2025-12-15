@@ -100,6 +100,48 @@ cd wallet-service
 npm install
 ```
 
+### Database Setup
+
+- Ensure PostgreSQL is installed and running.
+
+- Create a database for the wallet service:
+
+- Set your .env file with database credentials:
+
+- DATABASE_URL="postgresql://username:password@localhost:5432/novacrust_wallet?schema=public"
+- REDIS_URL="redis://localhost:6379"  # optional, only if using idempotency
+- PORT=3001
+
+### Prisma Setup
+
+- Generate Prisma client:
+
+- npx prisma generate
+
+
+- Run database migrations:
+
+- npx prisma migrate dev --name init
+
+
+### Running the Server
+
+- Start the NestJS server:
+
+- npm run start:dev
+
+
+The API will be accessible at http://localhost:3001/api/v1
+Swagger documentation: http://localhost:3001/api/docs
+
+### Running Tests
+
+- Execute the test suite with:
+
+- npm run test
+
+---
+
 ### Assumptions
 
 - Wallets are standalone entities (no user model included)
