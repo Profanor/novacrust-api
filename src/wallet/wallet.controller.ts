@@ -34,11 +34,11 @@ export class WalletController {
     return this.walletService.createWallet(body);
   }
 
-  @Get('balance/:walletId')
-  @ApiOperation({ summary: 'Get wallet balance' })
+  @Get(':walletId')
+  @ApiOperation({ summary: 'Get wallet details' })
   @ApiResponse({
     status: 200,
-    description: 'Wallet balance retrieved successfully.',
+    description: 'Wallet details retrieved successfully.',
   })
   @ApiResponse({
     status: 404,

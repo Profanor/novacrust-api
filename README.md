@@ -126,6 +126,7 @@ npm install
 ### API Documentation
 
 A Postman collection is included with all available endpoints and example requests.
+https://warped-meteor-419832.postman.co/workspace/My-Workspace~5e21a1a2-7d7c-42b1-8c0c-7d27eb3aa393/collection/31288774-302f6e92-7ec9-40bb-b261-378a9fbabbdd?action=share&creator=31288774
 
 ### Conclusion
 
