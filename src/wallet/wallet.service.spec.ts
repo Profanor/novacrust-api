@@ -181,33 +181,61 @@ describe('WalletService', () => {
     });
 
     it('should transfer successfully', async () => {
-      mockIdempotencyService.check.mockResolvedValue(false);
+      // Make the transaction run
+      mockIdempotencyService.check.mockResolvedValue(null);
 
+      // Mock $transaction
       mockPrisma.$transaction.mockImplementation(async (fn) => {
-        // inside the transaction, call the function with a modified prisma
+        // track balances in-memory
+        const balances = {
+          1: 1000, // sender
+          2: 1200, // recipient
+        };
+
         const prismaTx = {
-          ...mockPrisma,
           wallet: {
-            findUnique: jest
-              .fn()
-              .mockResolvedValueOnce({ ...mockWallet, balance: 1000 }) // sender before
-              .mockResolvedValueOnce({ ...mockWallet, balance: 1200 }), // recipient after
-            update: jest.fn().mockImplementation(({ where, data }) => {
-              if (where.id === 1)
-                return Promise.resolve({ ...mockWallet, balance: 800 });
-              if (where.id === 2)
-                return Promise.resolve({ ...mockWallet, balance: 1200 });
+            findUnique: jest.fn().mockImplementation(({ where: { id } }) => {
+              if (id in balances)
+                return Promise.resolve({
+                  ...mockWallet,
+                  balance: balances[id],
+                });
               return Promise.resolve(null);
             }),
-            updateMany: mockPrisma.wallet.updateMany,
+            updateMany: jest
+              .fn()
+              .mockImplementation(
+                ({ where: { id, balance }, data: { balance: dec } }) => {
+                  if (id === 1 && balances[1] >= balance.gte) {
+                    balances[1] -= dec.decrement; // decrement sender
+                    return Promise.resolve({ count: 1 });
+                  }
+                  return Promise.resolve({ count: 0 });
+                },
+              ),
+            update: jest
+              .fn()
+              .mockImplementation(({ where: { id }, data: { balance } }) => {
+                if (id === 2 && balance?.increment) {
+                  balances[2] += balance.increment; // increment recipient
+                  return Promise.resolve({
+                    ...mockWallet,
+                    balance: balances[2],
+                  });
+                }
+                return Promise.resolve({
+                  ...mockWallet,
+                  balance: balances[id],
+                });
+              }),
           },
-          transaction: mockPrisma.transaction,
+          transaction: {
+            createMany: jest.fn().mockResolvedValue({}),
+          },
         };
+
         return fn(prismaTx);
       });
-
-      mockPrisma.wallet.updateMany.mockResolvedValue({ count: 1 });
-      mockPrisma.transaction.create.mockResolvedValue({});
 
       const result = await service.transfer({
         fromWalletId: 1,
@@ -218,9 +246,12 @@ describe('WalletService', () => {
 
       expect(result.success).toEqual({
         senderBalance: 800,
-        recipientBalance: 1200,
+        recipientBalance: 1400,
         currency: 'NGN',
       });
+
+      // Ensure idempotency marked completed
+      expect(mockIdempotencyService.markCompleted).toHaveBeenCalled();
     });
 
     it('should not double transfer if idempotency key exists', async () => {
