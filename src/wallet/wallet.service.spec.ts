@@ -20,15 +20,14 @@ describe('WalletService', () => {
   };
 
   const mockPrisma = {
-    user: { findUnique: jest.fn() },
     wallet: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-    transaction: { create: jest.fn() },
+    transaction: { create: jest.fn(), createMany: jest.fn() },
     $transaction: jest.fn(),
   };
 
   const mockIdempotencyService = {
     check: jest.fn(),
-    mark: jest.fn(),
+    markCompleted: jest.fn(),
     markProcessing: jest.fn(),
     markFailed: jest.fn(),
   };
@@ -92,14 +91,14 @@ describe('WalletService', () => {
     });
 
     it('should fund wallet successfully', async () => {
-      mockIdempotencyService.check.mockResolvedValue(false);
+      mockIdempotencyService.check.mockResolvedValue(null); // force actual transaction
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.wallet.update.mockResolvedValue({
         ...mockWallet,
         balance: 1500,
       });
       mockPrisma.transaction.create.mockResolvedValue({});
-      mockIdempotencyService.mark.mockResolvedValue(undefined);
+      mockIdempotencyService.markCompleted.mockResolvedValue(undefined);
 
       const result = await service.fund({
         walletId: 1,
@@ -111,8 +110,13 @@ describe('WalletService', () => {
 
     it('should not double fund if idempotency key exists', async () => {
       mockIdempotencyService.check.mockResolvedValue({
-        alreadyProcessed: true,
-        success: { balance: mockWallet.balance, currency: mockWallet.currency },
+        status: 'COMPLETED',
+        data: {
+          success: {
+            balance: mockWallet.balance,
+            currency: mockWallet.currency,
+          },
+        },
       });
 
       const result = await service.fund({
@@ -144,8 +148,11 @@ describe('WalletService', () => {
     });
 
     it('should throw if recipient not found', async () => {
+      mockIdempotencyService.check.mockResolvedValue(null);
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.wallet.findUnique
+        .mockResolvedValueOnce({ ...mockWallet }) // sender
+        .mockResolvedValueOnce(null); // recipient
 
       await expect(
         service.transfer({
@@ -158,7 +165,11 @@ describe('WalletService', () => {
     });
 
     it('should throw if insufficient funds', async () => {
+      mockIdempotencyService.check.mockResolvedValue(null);
+      mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
+      mockPrisma.wallet.findUnique.mockResolvedValue(mockWallet);
       mockPrisma.wallet.updateMany.mockResolvedValue({ count: 0 });
+
       await expect(
         service.transfer({
           fromWalletId: 1,
@@ -171,8 +182,30 @@ describe('WalletService', () => {
 
     it('should transfer successfully', async () => {
       mockIdempotencyService.check.mockResolvedValue(false);
-      mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
-      mockPrisma.user.findUnique.mockResolvedValue({ ...mockWallet });
+
+      mockPrisma.$transaction.mockImplementation(async (fn) => {
+        // inside the transaction, call the function with a modified prisma
+        const prismaTx = {
+          ...mockPrisma,
+          wallet: {
+            findUnique: jest
+              .fn()
+              .mockResolvedValueOnce({ ...mockWallet, balance: 1000 }) // sender before
+              .mockResolvedValueOnce({ ...mockWallet, balance: 1200 }), // recipient after
+            update: jest.fn().mockImplementation(({ where, data }) => {
+              if (where.id === 1)
+                return Promise.resolve({ ...mockWallet, balance: 800 });
+              if (where.id === 2)
+                return Promise.resolve({ ...mockWallet, balance: 1200 });
+              return Promise.resolve(null);
+            }),
+            updateMany: mockPrisma.wallet.updateMany,
+          },
+          transaction: mockPrisma.transaction,
+        };
+        return fn(prismaTx);
+      });
+
       mockPrisma.wallet.updateMany.mockResolvedValue({ count: 1 });
       mockPrisma.transaction.create.mockResolvedValue({});
 
@@ -182,6 +215,7 @@ describe('WalletService', () => {
         amount: 200,
         idempotencyKey: 'key',
       });
+
       expect(result.success).toEqual({
         senderBalance: 800,
         recipientBalance: 1200,
@@ -191,11 +225,13 @@ describe('WalletService', () => {
 
     it('should not double transfer if idempotency key exists', async () => {
       mockIdempotencyService.check.mockResolvedValue({
-        alreadyProcessed: true,
-        success: {
-          senderBalance: 1000,
-          recipientBalance: 1000,
-          currency: 'NGN',
+        status: 'COMPLETED',
+        data: {
+          success: {
+            senderBalance: 1000,
+            recipientBalance: 1000,
+            currency: 'NGN',
+          },
         },
       });
 
@@ -225,23 +261,25 @@ describe('WalletService', () => {
     });
 
     it('should throw if wallet not found or insufficient funds', async () => {
+      mockIdempotencyService.check.mockResolvedValue(null);
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
+      mockPrisma.wallet.findUnique.mockResolvedValue(mockWallet);
       mockPrisma.wallet.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
-        service.withdraw({ walletId: 1, amount: 200, idempotencyKey: 'key' }),
+        service.withdraw({ walletId: 1, amount: 2000, idempotencyKey: 'key' }),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should withdraw successfully', async () => {
-      mockIdempotencyService.check.mockResolvedValue(false);
+      mockIdempotencyService.check.mockResolvedValue(null);
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
-      mockPrisma.wallet.updateMany.mockResolvedValue({ count: 1 });
-      mockPrisma.transaction.create.mockResolvedValue({});
       mockPrisma.wallet.findUnique.mockResolvedValue({
         ...mockWallet,
         balance: 800,
       });
+      mockPrisma.wallet.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.transaction.create.mockResolvedValue({});
 
       const result = await service.withdraw({
         walletId: 1,
@@ -253,8 +291,8 @@ describe('WalletService', () => {
 
     it('should not double withdraw if idempotency key exists', async () => {
       mockIdempotencyService.check.mockResolvedValue({
-        alreadyProcessed: true,
-        success: { balance: mockWallet.balance, currency: 'NGN' },
+        status: 'COMPLETED',
+        data: { success: { balance: mockWallet.balance, currency: 'NGN' } },
       });
 
       const result = await service.withdraw({

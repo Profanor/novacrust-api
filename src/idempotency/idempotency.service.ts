@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { RedisCacheService } from '@novacrust-lib/core/utils/redis-cache.service';
 
+type IdempotencyRecord<T> =
+  | { status: 'PROCESSING' }
+  | { status: 'FAILED'; error: any }
+  | { status: 'COMPLETED'; data: T };
+
 @Injectable()
 export class IdempotencyService {
   constructor(private readonly cache: RedisCacheService) {}
 
-  async check(key: string) {
+  async check<T>(key: string): Promise<IdempotencyRecord<T> | null> {
     return this.cache.get(key);
   }
 
@@ -13,11 +18,11 @@ export class IdempotencyService {
     await this.cache.set(key, { status: 'PROCESSING' }, 60);
   }
 
-  async markCompleted(key: string, response: any) {
-    await this.cache.set(key, response, 300);
+  async markCompleted<T>(key: string, data: T) {
+    await this.cache.set(key, { status: 'COMPLETED', data }, 300);
   }
 
   async markFailed(key: string, error: any) {
-    return this.cache.set(key, { status: 'failed', error }, 3600);
+    await this.cache.set(key, { status: 'FAILED', error }, 3600);
   }
 }

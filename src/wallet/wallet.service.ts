@@ -20,7 +20,7 @@ export class WalletService {
     private readonly idempotencyService: IdempotencyService,
   ) {}
 
-  private handleError(error: any, message: string) {
+  private handleError(error: any, message: string): never {
     if (
       error instanceof BadRequestException ||
       error instanceof NotFoundException
@@ -37,23 +37,28 @@ export class WalletService {
 
   private async processTransaction<T>(
     dto: { idempotencyKey?: string },
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    // auto-generate idempotency key if missing (demo-friendly)
+    operation: () => Promise<{ success: T }>,
+  ): Promise<{ success: T }> {
     const key = dto.idempotencyKey || randomUUID();
 
-    const cached = await this.idempotencyService.check(key);
-    if (cached) return cached as T;
+    const cached = await this.idempotencyService.check<{ success: T }>(key);
+
+    if (cached?.status === 'COMPLETED') {
+      return cached.data; // must match { success: T }
+    }
+
+    if (cached?.status === 'PROCESSING') {
+      throw new BadRequestException('Transaction is already processing');
+    }
 
     try {
       await this.idempotencyService.markProcessing(key);
       const result = await operation();
       await this.idempotencyService.markCompleted(key, result);
-      return result;
+      return result; // result must be { success: T }
     } catch (error) {
       await this.idempotencyService.markFailed(key, { message: error.message });
       this.handleError(error, 'Transaction failed');
-      throw error;
     }
   }
 
@@ -74,7 +79,11 @@ export class WalletService {
     if (!wallet) {
       throw new NotFoundException('Wallet not found');
     }
-    return wallet;
+    return {
+      balance: wallet.balance,
+      currency: wallet.currency,
+      transactions: wallet.transactions,
+    };
   }
 
   async fund(dto: FundDto) {
